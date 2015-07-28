@@ -109,7 +109,7 @@ func (p *Parameter) parseFunction() string {
 func (p *Parameter) outputParseParameter(sf *SourceFile) error {
     if p.Position > 1 {
         sf.addSourceLine("tok = vesupro.Scan(t, true)")
-        sf.addSourceLineIndent("if tok != COMMA {")
+        sf.addSourceLineIndent("if tok != vesupro.COMMA {")
         sf.addSourceLine(
             `return nil, `+
             `errors.New(fmt.Sprintf("Expected COMMA, got %%d.", tok))`)
@@ -121,10 +121,10 @@ func (p *Parameter) outputParseParameter(sf *SourceFile) error {
     if len(p.AcceptedTokens) < 1 {
         return errors.New("no accepted Tokens");
     }
-    conditionExpr := "tok != " + p.AcceptedTokens[0]
+    conditionExpr := "tok != vesupro." + p.AcceptedTokens[0]
 
     for _, tokenName := range p.AcceptedTokens[1:] {
-        conditionExpr += " && tok != " + tokenName
+        conditionExpr += " && tok != vesupro." + tokenName
     }
 
     if p.IsStruct {
@@ -143,7 +143,7 @@ func (p *Parameter) outputParseParameter(sf *SourceFile) error {
 
         if p.Type == "bool" {
             sf.addSourceLine("%s := false", p.varName())
-            sf.addSourceLine("if tok == TRUE { %s = true }", p.varName())
+            sf.addSourceLine("if tok == vesupro.TRUE { %s = true }", p.varName())
         } else {
             // parse token
             if p.ParseFunctionTemplate != "" {
@@ -182,8 +182,8 @@ func (mc *MethodCall) outputCall(sf *SourceFile) {
 func (mc *MethodCollection) outputDispatchers(sf *SourceFile) {
     for rcvTypeName, mcs := range mc.Methods {
         sf.addSourceLineIndent(
-            "func (r *%s) DispatchCall(%s string, t Tokenizer) " +
-            "(VesuproObject, error) {", rcvTypeName, METHOD_NAME_VAR)
+            "func (r *%s) Dispatch(%s string, t vesupro.Tokenizer) " +
+            "(vesupro.VesuproObject, error) {", rcvTypeName, METHOD_NAME_VAR)
         sf.addSourceLine("switch %s {", METHOD_NAME_VAR)
 
         for _, mc := range mcs {
@@ -333,6 +333,7 @@ func (mc *MethodCollection) outputPrelude(sf *SourceFile) {
     sf.addSourceLine(`"fmt"`)
     sf.addSourceLine(`"errors"`)
     sf.addSourceLine(`"strconv"`)
+    sf.addSourceLine(`"github.com/d-s-d/vesupro"`)
     sf.addSourceLineUnindent(")")
 }
 
