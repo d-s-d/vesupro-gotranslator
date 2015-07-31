@@ -118,7 +118,7 @@ func outputTokenCondition(f SimProgFile, tokens []string,
 
     f.AddLineIndent("if %s {", condExpr)
     f.AddLineIndent(`%s = fmt.Errorf(`, errVar.VarName())
-    f.AddLine(`Expected token id %s, but got %%d.", %s, %s)`,
+    f.AddLine(`"Expected token id %s, but got %%d.", %s, %s)`,
         errFmt, errArg, tokVar.VarName())
     f.Unindent()
     f.AddLineUnindent("}")
@@ -134,9 +134,11 @@ func outputCheckErrorReturn(f SimProgFile, errVar Var,
 nilVals []string) {
     retArgs := make([]string, len(nilVals)+1)
     copy(retArgs, nilVals)
-    retArgs[len(retArgs)] = errVar.VarName()
+    retArgs[len(nilVals)] = errVar.VarName()
 
-    f.AddLine("return %s", strings.Join(nilVals, ", "))
+    f.AddLineIndent("if %s != nil {", errVar.VarName())
+    f.AddLine("return %s", strings.Join(retArgs, ", "))
+    f.AddLineUnindent("}")
 }
 
 func (p *Parameter) outputParseParameter(f SimProgFile,
@@ -223,8 +225,8 @@ func (api *Api) outputDispatchers(f SimProgFile) {
         f.AddLineIndent(
             "func (%s *%s) Dispatch(%s string, %s vesupro.Tokenizer) " +
             "(vesupro.VesuproObject, error) {",
-            rcvVar.VarName(), rcvTypeName, tokzrVar.VarName(),
-            mNameParam.VarName())
+            rcvVar.VarName(), rcvTypeName, mNameParam.VarName(),
+            tokzrVar.VarName())
         f.AddLine("var %s vesupro.Token", tokVar.VarName())
         f.AddLine("var %s error", errVar.VarName())
 
@@ -287,6 +289,7 @@ func main() {
     if err != nil { log.Fatal(err) }
 
     for _, goFile := range goFiles {
+        if goFile == outputFilename { continue }
         fset := token.NewFileSet()
 
         f, err := parser.ParseFile(fset, goFile, nil, parser.ParseComments)
