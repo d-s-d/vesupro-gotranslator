@@ -24,13 +24,13 @@ type method apidistiller.Method
 type api apidistiller.API
 
 func (p *parameter) OutputFetchToken(f SimProgFile,
-v DynSSAVar, tokVar Var) {
+v DynSSAVar, tokzrVar Var) {
     if p.IsStruct {
         f.AddLine(`%s := %s.CurrentToken()`, v.NextType("[]byte"),
-            tokVar.VarName())
+            tokzrVar.VarName())
     } else {
         f.AddLine(`%s := string(%s.CurrentToken())`, v.NextType("string"),
-            tokVar.VarName())
+            tokzrVar.VarName())
     }
 }
 
@@ -150,7 +150,7 @@ paramVar DynSSAVar, tokVar, tokzrVar, errVar Var) error {
     p.OutputTokenConditionVar(f, tokVar, errVar)
     outputCheckErrorReturn(f, errVar, nilRetVals)
 
-    p.OutputFetchToken(f, paramVar, tokVar)
+    p.OutputFetchToken(f, paramVar, tokzrVar)
     err = p.OutputParseFunction(f, paramVar, errVar)
     if err != nil { return err }
     outputCheckErrorReturn(f, errVar, nilRetVals)
