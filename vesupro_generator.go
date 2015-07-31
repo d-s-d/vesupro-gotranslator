@@ -12,18 +12,18 @@ import (
     apidistiller "github.com/d-s-d/vesupro/apidistiller"
 )
 
-const USAGE = `$ vesupro-gotranslator <packageName> [<outputFileName>]
+const usageStr = `$ vesupro-gotranslator <packageName> [<outputFileName>]
 
 generates vesupro parser functions for all .go source files in the current
 directory.`
 
-const DEFAULT_OUTPUT_FNAME = "vesupro_api.go"
+const defaultOutputFname = "vesupro_api.go"
 
-type Parameter apidistiller.Parameter
-type Method apidistiller.Method
-type Api apidistiller.Api
+type parameter apidistiller.Parameter
+type method apidistiller.Method
+type api apidistiller.API
 
-func (p *Parameter) OutputFetchToken(f SimProgFile,
+func (p *parameter) OutputFetchToken(f SimProgFile,
 v DynSSAVar, tokVar Var) {
     if p.IsStruct {
         f.AddLine(`%s := %s.CurrentToken()`, v.NextType("[]byte"),
@@ -34,13 +34,13 @@ v DynSSAVar, tokVar Var) {
     }
 }
 
-func (p *Parameter) OutputConvString(f SimProgFile, v DynSSAVar) {
+func (p *parameter) OutputConvString(f SimProgFile, v DynSSAVar) {
     if v.GetType() != "string" {
         f.AddLine(`%s := string(%s.CurrentToken())`, v.NextType("string"))
     }
 }
 
-func (p *Parameter) OutputParseFunction(f SimProgFile,
+func (p *parameter) OutputParseFunction(f SimProgFile,
 v DynSSAVar, errVar Var) error {
     if p.IsStruct {
         currentName := v.VarName()
@@ -93,7 +93,7 @@ v DynSSAVar, errVar Var) error {
     return nil
 }
 
-func (p *Parameter) OutputTokenConditionVar(
+func (p *parameter) OutputTokenConditionVar(
     f SimProgFile, tokVar Var, errVar Var) error {
     tokens, found := apidistiller.BasicTypes[p.TypeName]
     if !found {
@@ -141,7 +141,7 @@ nilVals []string) {
     f.AddLineUnindent("}")
 }
 
-func (p *Parameter) outputParseParameter(f SimProgFile,
+func (p *parameter) outputParseParameter(f SimProgFile,
 paramVar DynSSAVar, tokVar, tokzrVar, errVar Var) error {
     var err error
     nilRetVals := []string{"nil"}
@@ -158,7 +158,7 @@ paramVar DynSSAVar, tokVar, tokzrVar, errVar Var) error {
     return nil
 }
 
-func (m *Method) OutputParseParameters(f SimProgFile,
+func (m *method) OutputParseParameters(f SimProgFile,
 paramVars []DynSSAVar, tokVar, tokzrVar, errVar Var) error {
 
     nilRetVals := []string{"nil"}
@@ -167,23 +167,23 @@ paramVars []DynSSAVar, tokVar, tokzrVar, errVar Var) error {
         return nil
     }
 
-    (*Parameter)(m.Params[0]).outputParseParameter(f, paramVars[0],
+    (*parameter)(m.Params[0]).outputParseParameter(f, paramVars[0],
         tokVar, tokzrVar, errVar)
 
     for i, param := range m.Params[1:] {
-        p := (*Parameter)(param)
+        p := (*parameter)(param)
         outputScanToken(f, tokVar, tokzrVar)
         outputTokenCondition(f, []string{"vesupro.COMMA"}, tokVar, errVar)
         outputCheckErrorReturn(f, errVar, nilRetVals)
 
-        err := p.outputParseParameter(f, paramVars[i], tokVar, tokzrVar,
+        err := p.outputParseParameter(f, paramVars[i+1], tokVar, tokzrVar,
             errVar)
         if err != nil { return err }
     }
     return nil
 }
 
-func (m *Method) outputCall(f SimProgFile,
+func (m *method) outputCall(f SimProgFile,
 tokVar, tokzrVar, errVar, rcvVar Var) error {
     paramVars := make([]DynSSAVar, len(m.Params))
     finalParams := make([]string, len(m.Params))
@@ -213,14 +213,14 @@ tokVar, tokzrVar, errVar, rcvVar Var) error {
     return nil
 }
 
-func (api *Api) outputDispatchers(f SimProgFile) {
+func (a *api) outputDispatchers(f SimProgFile) {
     mNameParam := NewSimpleVar("methodName")
     tokzrVar := NewSimpleVar("t")
     tokVar := NewSimpleVar("tok")
     errVar := NewSimpleVar("err")
     rcvVar := NewSimpleVar("r")
 
-    for rcvTypeName, methods := range api.Methods {
+    for rcvTypeName, methods := range a.Methods {
 
         f.AddLineIndent(
             "func (%s *%s) Dispatch(%s string, %s vesupro.Tokenizer) " +
@@ -233,7 +233,7 @@ func (api *Api) outputDispatchers(f SimProgFile) {
         f.AddLine("switch %s {", mNameParam.VarName())
 
         for _, _m := range methods {
-            m := (*Method)(_m)
+            m := (*method)(_m)
             f.AddLineIndent("case %q:", m.Name)
             m.outputCall(f, tokVar, tokzrVar, errVar, rcvVar)
             f.Unindent()
@@ -246,8 +246,8 @@ func (api *Api) outputDispatchers(f SimProgFile) {
     }
 }
 
-func (api *Api) outputPrelude(f SimProgFile) {
-    f.AddLine("package " + api.PackageName)
+func (a *api) outputPrelude(f SimProgFile) {
+    f.AddLine("package " + a.PackageName)
     f.AddLineIndent("import (")
     f.AddLine(`"fmt"`)
     f.AddLine(`"strconv"`)
@@ -270,19 +270,19 @@ func main() {
 
     packageName := os.Args[1]
 
-    outputFilename := DEFAULT_OUTPUT_FNAME
+    outputFilename := defaultOutputFname
     if nArgs > 2 {
         outputFilename = os.Args[2]
     }
 
-    f_out, err := os.Create(outputFilename)
+    fOut, err := os.Create(outputFilename)
     if err != nil {
         log.Fatal(err);
     }
 
-    outText := NewBufferedSimProgFile(f_out)
+    outText := NewBufferedSimProgFile(fOut)
 
-    api := apidistiller.NewAPI(packageName)
+    a := apidistiller.NewAPI(packageName)
 
     // walk through all .go files
     goFiles, err := filepath.Glob("./*.go")
@@ -303,10 +303,10 @@ func main() {
             continue
         }
 
-        api.DistillFromAstFile(f)
+        a.DistillFromAstFile(f)
     }
 
-    _api := (*Api)(api)
+    _api := (*api)(a)
     _api.outputPrelude(outText)
     _api.outputDispatchers(outText)
     outText.WriteToFile()
