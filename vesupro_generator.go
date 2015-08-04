@@ -8,7 +8,7 @@ import (
     "go/parser"
     "go/token"
     "path/filepath"
-    . "github.com/d-s-d/simprogtext"
+    "github.com/d-s-d/simprogtext"
     apidistiller "github.com/d-s-d/vesupro/apidistiller"
 )
 
@@ -23,69 +23,27 @@ type parameter apidistiller.Parameter
 type method apidistiller.Method
 type api apidistiller.API
 
-func (p *parameter) OutputFetchToken(f SimProgFile,
-v DynSSAVar, tokzrVar Var) {
-    if p.IsStruct {
-        f.AddLine(`%s := %s.CurrentToken()`, v.NextType("[]byte"),
-            tokzrVar.VarName())
-    } else {
-        f.AddLine(`%s := string(%s.CurrentToken())`, v.NextType("string"),
-            tokzrVar.VarName())
-    }
-}
-
-func (p *parameter) OutputConvString(f SimProgFile, v DynSSAVar) {
-    if v.GetType() != "string" {
-        f.AddLine(`%s := string(%s.CurrentToken())`, v.NextType("string"))
-    }
-}
-
-func (p *parameter) OutputParseFunction(f SimProgFile,
-v DynSSAVar, errVar Var) error {
+func (p *parameter) OutputParseArgument(f simprogtext.SimProgFile,
+        v simprogtext.DynSSAVar, argVar, errVar simprogtext.Var) error {
     if p.IsStruct {
         currentName := v.VarName()
         f.AddLine("%s := &%s{}", v.Next(), p.TypeName)
-        f.AddLine("%s = %s.UnmarshalJSON(t.CurrentToken())", errVar.VarName(),
-        currentName)
+        f.AddLine("%s = %s.UnmarshalJSON(%s.TokenContent)", errVar.VarName(),
+        currentName, argVar)
     } else {
-        if v.GetType() != "string" {
-            p.OutputConvString(f, v)
-        }
-        switch p.TypeName {
-        case "uint":
-            f.AddLine("%[2]s, %[3]s := strconv.ParseUInt(%[1]s, 10, 0)",
-            v.VarName(), v.Next(), errVar.VarName())
-
-        case "uint8", "uint16", "uint32", "uint64":
-            f.AddLine("%[2]s, %[4]s := strconv.ParseUInt(%[1]s, 10, %[3]s)",
-            v.VarName(), v.Next(), p.TypeName[4:], errVar.VarName())
-
-        case "int", "rune":
-            f.AddLine("%[2]s, %[3]s := strconv.ParseInt(%[1]s, 10, 0)",
-            v.VarName(), v.Next(), errVar.VarName())
-
-        case "int8", "int16", "int32", "int64":
-            f.AddLine("%[2]s, %[4]s := strconv.ParseInt(%[1]s, 10, %[3]s)",
-            v.VarName(), v.Next(), p.TypeName[3:], errVar.VarName())
-
-        case "float32", "float64":
-            f.AddLine("%[2]s, %[4]s := strconv.ParseFloat(%[1]s, %[3]s)",
-            v.VarName(), v.Next(), p.TypeName[5:], errVar.VarName())
-
-        case "complex64", "complex128":
-            f.AddLine("%[2]s, %[4]s := strconv.ParseFloat(%[1]s, %[3]s)",
-            v.VarName(), v.Next(), p.TypeName[7:], errVar.VarName())
-
-        case "byte":
-            f.AddLine("%[2]s, %[3]s := strconv.ParseUInt(%[1]s, 10, 8)",
-            v.VarName(), v.Next(), errVar.VarName())
-
-        case "bool":
-            f.AddLine("%[2]s, %[3]s := strconv.ParseBool(%[1]s)",
-            v.VarName(), v.Next(), errVar.VarName())
-
-        case "string":
-            // no further processing necessary
+        switch p.TypeName[:3] {
+        case "uin", "int", "byt":
+            f.AddLine("%s, %s := %s.ToInt64()", v.NextType("int64"),
+                errVar.VarName(), argVar.VarName())
+        case "flo", "com":
+            f.AddLine("%s, %s := %s.ToFloat64()", v.NextType("float64"),
+                errVar.VarName(), argVar.VarName())
+        case "boo":
+            f.AddLine("%s, %s := %s.ToBool()", v.NextType("bool"),
+                errVar.VarName(), argVar.VarName())
+        case "str":
+            f.AddLine("%s, %s := %s.ToString()", v.NextType("string"),
+                argVar.VarName())
         default:
             return fmt.Errorf("Unsupport type: %s", p.TypeName)
         }
@@ -93,45 +51,8 @@ v DynSSAVar, errVar Var) error {
     return nil
 }
 
-func (p *parameter) OutputTokenConditionVar(
-    f SimProgFile, tokVar Var, errVar Var) error {
-    tokens, found := apidistiller.BasicTypes[p.TypeName]
-    if !found {
-        return fmt.Errorf("Type not found: %s.", p.TypeName)
-    }
-    outputTokenCondition(f, tokens, tokVar, errVar)
-    return nil
-}
-
-func outputTokenCondition(f SimProgFile, tokens []string,
-        tokVar, errVar Var) {
-
-    if len(tokens) < 1 { return }
-    // postcond: len(tokens) > 0
-    conditions := make([]string, len(tokens))
-    for i, token := range tokens {
-        conditions[i] = tokVar.VarName() + " != " + token
-    }
-    errFmt := "%d" + strings.Repeat(", or %d", len(tokens)-1)
-    errArg := strings.Join(tokens, ", ")
-    condExpr := strings.Join(conditions, " && ")
-
-    f.AddLineIndent("if %s {", condExpr)
-    f.AddLineIndent(`%s = fmt.Errorf(`, errVar.VarName())
-    f.AddLine(`"Expected token id %s, but got %%d.", %s, %s)`,
-        errFmt, errArg, tokVar.VarName())
-    f.Unindent()
-    f.AddLineUnindent("}")
-}
-
-func outputScanToken(f SimProgFile,
-    tokVar Var, tokzrVar Var) {
-    f.AddLine("%s = vesupro.Scan(%s, true)", tokVar.VarName(),
-        tokzrVar.VarName())
-}
-
-func outputCheckErrorReturn(f SimProgFile, errVar Var,
-nilVals []string) {
+func outputCheckErrorReturn(f simprogtext.SimProgFile,
+        errVar simprogtext.Var, nilVals []string) {
     retArgs := make([]string, len(nilVals)+1)
     copy(retArgs, nilVals)
     retArgs[len(nilVals)] = errVar.VarName()
@@ -141,61 +62,34 @@ nilVals []string) {
     f.AddLineUnindent("}")
 }
 
-func (p *parameter) outputParseParameter(f SimProgFile,
-paramVar DynSSAVar, tokVar, tokzrVar, errVar Var) error {
-    var err error
-    nilRetVals := []string{"nil"}
-
-    outputScanToken(f, tokVar, tokzrVar)
-    p.OutputTokenConditionVar(f, tokVar, errVar)
-    outputCheckErrorReturn(f, errVar, nilRetVals)
-
-    p.OutputFetchToken(f, paramVar, tokzrVar)
-    err = p.OutputParseFunction(f, paramVar, errVar)
-    if err != nil { return err }
-    outputCheckErrorReturn(f, errVar, nilRetVals)
-
-    return nil
-}
-
-func (m *method) OutputParseParameters(f SimProgFile,
-paramVars []DynSSAVar, tokVar, tokzrVar, errVar Var) error {
-
-    nilRetVals := []string{"nil"}
-
-    if len(m.Params) == 0 {
-        return nil
-    }
-
-    (*parameter)(m.Params[0]).outputParseParameter(f, paramVars[0],
-        tokVar, tokzrVar, errVar)
-
-    for i, param := range m.Params[1:] {
-        p := (*parameter)(param)
-        outputScanToken(f, tokVar, tokzrVar)
-        outputTokenCondition(f, []string{"vesupro.COMMA"}, tokVar, errVar)
-        outputCheckErrorReturn(f, errVar, nilRetVals)
-
-        err := p.outputParseParameter(f, paramVars[i+1], tokVar, tokzrVar,
-            errVar)
-        if err != nil { return err }
-    }
-    return nil
-}
-
-func (m *method) outputCall(f SimProgFile,
-tokVar, tokzrVar, errVar, rcvVar Var) error {
-    paramVars := make([]DynSSAVar, len(m.Params))
+func (m *method) outputCall(f simprogtext.SimProgFile,
+        mCallVar, argsVar, errVar, rcvVar simprogtext.Var,
+        nilRetVals []string) error {
+    paramVars := make([]simprogtext.DynSSAVar, len(m.Params))
     finalParams := make([]string, len(m.Params))
 
-    for i, param := range m.Params {
-        paramVars[i] = NewDynSSAVar(fmt.Sprintf(
-            "param_%d", param.Position), "")
-    }
+    f.AddLineIndent("if len(%s.Arguments) != %d {", mCallVar.VarName(),
+        len(m.Params))
+    f.AddLine(
+        `fmt.Errof("Method %s: Wrong number of arguments: %%d (want: %d)",`+
+        `len(%s))`, m.Name, len(m.Params), argsVar.VarName())
 
-    err := m.OutputParseParameters(f, paramVars, tokVar, tokzrVar, errVar)
-    if err != nil {
-        return err
+    f.AddLineUnindent("}")
+
+    var err error
+    for i, param := range m.Params {
+        paramVars[i] = simprogtext.NewDynSSAVar(fmt.Sprintf(
+            "param_%d", param.Position), "")
+        // parse Argument
+        err = (*parameter)(param).OutputParseArgument(f, paramVars[i],
+            simprogtext.NewSimpleVar(fmt.Sprintf("%s[%d]", argsVar.VarName(),
+                i)), errVar)
+
+        // go sucks
+        if err != nil { return err }
+
+        // check error
+        outputCheckErrorReturn(f, errVar, nilRetVals)
     }
 
     for i, param := range m.Params {
@@ -207,46 +101,47 @@ tokVar, tokzrVar, errVar, rcvVar Var) error {
         }
     }
 
-    f.AddLine("return %s.%s(%s)",
-    rcvVar.VarName(), m.Name, strings.Join(finalParams, ", "))
+    f.AddLine("return %s.%s(%s)", rcvVar.VarName(), m.Name,
+        strings.Join(finalParams, ", "))
 
     return nil
 }
 
-func (a *api) outputDispatchers(f SimProgFile) {
-    mNameParam := NewSimpleVar("methodName")
-    tokzrVar := NewSimpleVar("t")
-    tokVar := NewSimpleVar("tok")
-    errVar := NewSimpleVar("err")
-    rcvVar := NewSimpleVar("r")
+func (a *api) outputDispatchers(f simprogtext.SimProgFile) {
+    mCallParam := simprogtext.NewSimpleVar("mc")
+    errVar := simprogtext.NewSimpleVar("err")
+    argsVar := simprogtext.NewSimpleVar("arg")
+    rcvVar := simprogtext.NewSimpleVar("r")
 
     for rcvTypeName, methods := range a.Methods {
 
         f.AddLineIndent(
-            "func (%s *%s) Dispatch(%s string, %s vesupro.Tokenizer) " +
+            "func (%s *%s) Dispatch(%s *vesupro.MethodCall) " +
             "(vesupro.VesuproObject, error) {",
-            rcvVar.VarName(), rcvTypeName, mNameParam.VarName(),
-            tokzrVar.VarName())
-        f.AddLine("var %s vesupro.Token", tokVar.VarName())
+            rcvVar.VarName(), rcvTypeName, mCallParam.VarName())
         f.AddLine("var %s error", errVar.VarName())
+        f.AddLine("%s := %s.Arguments", argsVar.VarName(),
+            mCallParam.VarName())
 
-        f.AddLine("switch %s {", mNameParam.VarName())
+        f.AddLine("switch %s.Name {", mCallParam.VarName())
 
         for _, _m := range methods {
             m := (*method)(_m)
             f.AddLineIndent("case %q:", m.Name)
-            m.outputCall(f, tokVar, tokzrVar, errVar, rcvVar)
+            m.outputCall(f, mCallParam, argsVar, errVar, rcvVar,
+                []string{"nil"})
             f.Unindent()
         }
 
         f.AddLineIndent("default:")
-        f.AddLine(`return nil,fmt.Errorf("Unknown function %%s.", methodName)`)
+        f.AddLine(`return nil,fmt.Errorf("Unknown function %%s.", %s.Name)`,
+            mCallParam.VarName())
         f.AddLineUnindent("}") // switch
         f.AddLineUnindent("}") // DispatchCall function
     }
 }
 
-func (a *api) outputPrelude(f SimProgFile) {
+func (a *api) outputPrelude(f simprogtext.SimProgFile) {
     f.AddLine("package " + a.PackageName)
     f.AddLineIndent("import (")
     f.AddLine(`"fmt"`)
@@ -280,7 +175,7 @@ func main() {
         log.Fatal(err);
     }
 
-    outText := NewBufferedSimProgFile(fOut)
+    outText := simprogtext.NewBufferedSimProgFile(fOut)
 
     a := apidistiller.NewAPI(packageName)
 
