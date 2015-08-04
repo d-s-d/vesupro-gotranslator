@@ -71,7 +71,7 @@ func (m *method) outputCall(f simprogtext.SimProgFile,
     f.AddLineIndent("if len(%s.Arguments) != %d {", mCallVar.VarName(),
         len(m.Params))
     f.AddLine(
-        `fmt.Errof("Method %s: Wrong number of arguments: %%d (want: %d)",`+
+        `fmt.Errof("Method \"%s\": Wrong number of arguments: %%d (want: %d)",`+
         `len(%s))`, m.Name, len(m.Params), argsVar.VarName())
 
     f.AddLineUnindent("}")
@@ -145,7 +145,6 @@ func (a *api) outputPrelude(f simprogtext.SimProgFile) {
     f.AddLine("package " + a.PackageName)
     f.AddLineIndent("import (")
     f.AddLine(`"fmt"`)
-    f.AddLine(`"strconv"`)
     f.AddLine(`"github.com/d-s-d/vesupro"`)
     f.AddLineUnindent(")")
 }
